@@ -1,25 +1,26 @@
-# In .github/workflows/ci.yml
-# Forcing a new run
-name: VaniSetu CI
+name: VaniSetu CI/CD
 
-# This workflow runs automatically on any push to the 'develop' branch
 on:
   push:
     branches: [ "develop" ]
   workflow_dispatch:
 
 jobs:
-  build:
-    # The type of machine to run the job on
+  build_and_push:
     runs-on: ubuntu-latest
-
     steps:
-      # Step 1: Check out your repository code so the workflow can access it
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Build the Docker image
-      # This is the same command you ran on your laptop, but now the cloud runner does it
-      - name: Build Docker image
-        run: docker build -t vanisetu-backend .
-        working-directory: ./backend
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/vanisetu-backend:latest
