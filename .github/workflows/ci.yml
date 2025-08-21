@@ -25,10 +25,10 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/vanisetu-backend:latest
 
-  deploy:
-    # This job runs only after 'build_and_push' is successful
-    needs: build_and_push
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger Render Deployment
-        run: curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK }}
+  # deploy:
+  #   # This job runs only after 'build_and_push' is successful
+  #   needs: build_and_push
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Trigger Render Deployment
+  #       run: curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK }}
