@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "VaniSetu Dubbing",
+  "version": "0.1",
+  "description": "AI-powered video dubbing.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "tabCapture",
+    "offscreen"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
