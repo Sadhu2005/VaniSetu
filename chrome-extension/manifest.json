@@ -7,7 +7,11 @@
     "activeTab",
     "scripting",
     "tabCapture",
-    "offscreen"
+    "offscreen",
+    "storage" 
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*"
   ],
   "action": {
     "default_popup": "popup.html"

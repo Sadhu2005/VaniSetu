@@ -1,41 +1,48 @@
 // In chrome-extension/offscreen.js
 
-// Listen for messages from the background script
+let recorder;
+let stream;
+
 chrome.runtime.onMessage.addListener((message) => {
   if (message.target === 'offscreen' && message.type === 'start-recording') {
-    // We now receive the streamId directly from the background script
-    startRecording(message.data.streamId);
+    startContinuousRecording(message.data.streamId);
   }
 });
 
-async function startRecording(streamId) {
-  // Use the streamId to get the media stream
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      mandatory: {
-        chromeMediaSource: 'tab',
-        chromeMediaSourceId: streamId // Use the passed streamId
-      }
-    }
+async function startContinuousRecording(streamId) {
+  if (recorder?.state === 'recording') return;
+
+  stream = await navigator.mediaDevices.getUserMedia({
+    audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId } }
   });
 
-  // The rest of the recording logic is the same
-  const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-  const chunks = [];
-  recorder.ondataavailable = (event) => chunks.push(event.data);
-  recorder.onstop = () => {
-    const audioBlob = new Blob(chunks, { type: "audio/webm" });
+  // This function will handle the 10-second recording loop
+  const recordAndSend = () => {
+    recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+    const chunks = [];
+    recorder.ondataavailable = (event) => chunks.push(event.data);
     
-    chrome.runtime.sendMessage({
-      type: 'audio-captured',
-      target: 'background',
-      data: {
-        blobUrl: URL.createObjectURL(audioBlob) 
+    recorder.onstop = () => {
+      const audioBlob = new Blob(chunks, { type: "audio/webm" });
+      chrome.runtime.sendMessage({
+        type: 'audio-chunk-captured',
+        target: 'background',
+        data: { blobUrl: URL.createObjectURL(audioBlob) }
+      });
+      // After a segment is sent, start the next one immediately
+      if (stream.active) {
+        recordAndSend();
       }
-    });
-    stream.getTracks().forEach(track => track.stop());
+    };
+    
+    recorder.start();
+    setTimeout(() => {
+        if(recorder.state === 'recording') {
+            recorder.stop();
+        }
+    }, 10000); // Record for 10 seconds
   };
   
-  recorder.start();
-  setTimeout(() => recorder.stop(), 10000);
+  // Start the first recording
+  recordAndSend();
 }

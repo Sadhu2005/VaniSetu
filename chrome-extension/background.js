@@ -1,91 +1,127 @@
 // In chrome-extension/background.js
 
+const NGROK_BASE_URL = "https://dab473d3f533.ngrok-free.app"; // No slash at the end
+const WEBSOCKET_URL = NGROK_BASE_URL.replace('https://', 'wss://') + "/ws/dub";
+
 // ==============================================================================
-// IMPORTANT: PASTE YOUR LATEST NGROK URL HERE
-// ==============================================================================
-const BACKEND_URL = "https://b856a0eec2a2.ngrok-free.app/api/v1/dub-audio";
+// FINAL BACKGROUND.JS
 
 
 
-// Main message listener
+let socket;
+let activeTabId;
+
 chrome.runtime.onMessage.addListener((message) => {
   if (message.action === "startCapture") {
-    setupOffscreenDocument(message.tabId);
-  } else if (message.target === 'background' && message.type === 'audio-captured') {
+    activeTabId = message.tabId;
+    connectWebSocket(message.tabId);
+  } else if (message.action === "stopCapture") {
+    if (socket) socket.close();
+    chrome.scripting.executeScript({
+      target: { tabId: message.tabId },
+      func: stopDubbingOnPage,
+    });
+  } else if (message.target === 'background' && message.type === 'audio-chunk-captured') {
     fetch(message.data.blobUrl)
       .then(response => response.blob())
-      .then(audioBlob => sendAudioToServer(audioBlob))
-      .catch(error => console.error("Error fetching blob:", error));
+      .then(audioBlob => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(audioBlob);
+        }
+      });
   }
 });
 
-// Manages the offscreen document for audio capture
+function connectWebSocket(tabId) {
+  if (socket && socket.readyState !== WebSocket.CLOSED) return;
+  
+  socket = new WebSocket(WEBSOCKET_URL);
+  
+  socket.onopen = () => {
+    console.log("✅ WebSocket connection opened.");
+    setupOffscreenDocument(tabId);
+  };
+  
+  socket.onmessage = (event) => {
+    const audioBlob = event.data;
+    const reader = new FileReader();
+    reader.onload = function() {
+        const audioDataUrl = reader.result;
+        chrome.scripting.executeScript({
+            target: { tabId: activeTabId },
+            func: addToPlaybackQueue,
+            args: [audioDataUrl]
+        });
+    };
+    reader.readAsDataURL(audioBlob);
+  };
+  
+  socket.onerror = (error) => console.error("❌ WebSocket Error:", error);
+  socket.onclose = () => console.log("WebSocket connection closed.");
+}
+
 async function setupOffscreenDocument(tabId) {
   const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
   const existingContexts = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
-
   if (existingContexts.length > 0) {
     chrome.runtime.sendMessage({ type: 'start-recording', target: 'offscreen', data: { streamId } });
     return;
   }
-
   await chrome.offscreen.createDocument({
     url: 'offscreen.html',
     reasons: ['USER_MEDIA'],
     justification: 'Required for tab audio capture.',
   });
-  
   chrome.runtime.sendMessage({ type: 'start-recording', target: 'offscreen', data: { streamId } });
 }
 
-// Sends audio to backend and injects the final audio for playback
-function sendAudioToServer(audioBlob) {
-  const formData = new FormData();
-  formData.append("audio", audioBlob, "captured_audio.webm");
-
-  console.log("Sending audio to backend...");
-  fetch(BACKEND_URL, {
-    method: "POST",
-    headers: { "ngrok-skip-browser-warning": "true" },
-    body: formData,
-  })
-  .then(response => response.blob())
-  .then(dubbedAudioBlob => {
-    console.log("✅ Success! Received dubbed audio back from server.");
-    
-    // --- THIS IS THE NEW, CORRECTED CODE ---
-    // Convert the Blob to a Data URL to pass it to the content script
-    const reader = new FileReader();
-    reader.onload = function() {
-        const audioDataUrl = reader.result;
-        
-        // Find the active tab to inject the playback script
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs[0]) {
-                // Use executeScript to directly run the playback logic on the page
-                chrome.scripting.executeScript({
-                    target: { tabId: tabs[0].id },
-                    func: playDubbedAudioOnPage,
-                    args: [audioDataUrl]
-                });
-            }
-        });
+// Injected function for PLAYING audio
+function addToPlaybackQueue(audioUrl) {
+  if (!window.vaniSetuPlayerInitialized) {
+    window.vaniSetuAudioQueue = [];
+    window.vaniSetuIsPlaying = false;
+    const dubbedAudio = new Audio();
+    dubbedAudio.id = 'vaniSetuDubbedAudio';
+    document.body.appendChild(dubbedAudio);
+    const videoElement = document.querySelector('video');
+    if (!videoElement) return;
+    videoElement.muted = true;
+    videoElement.onplay = () => { if(!window.vaniSetuIsPlaying) { playNextInQueue(); }};
+    videoElement.onpause = () => dubbedAudio.pause();
+    dubbedAudio.onended = () => {
+      window.vaniSetuIsPlaying = false;
+      playNextInQueue();
     };
-    reader.readAsDataURL(dubbedAudioBlob);
-    // --- END OF NEW CODE ---
-  })
-  .catch(error => console.error("❌ Error sending audio:", error));
+    const playNextInQueue = () => {
+      if (window.vaniSetuAudioQueue.length > 0 && !window.vaniSetuIsPlaying) {
+        window.vaniSetuIsPlaying = true;
+        const nextUrl = window.vaniSetuAudioQueue.shift();
+        dubbedAudio.src = nextUrl;
+        dubbedAudio.play().catch(e => console.error("Audio play failed:", e));
+      }
+    };
+    window.playNextInQueue = playNextInQueue;
+    window.vaniSetuPlayerInitialized = true;
+  }
+  window.vaniSetuAudioQueue.push(audioUrl);
+  window.playNextInQueue();
 }
 
-// This function will be injected and run on the YouTube page
-function playDubbedAudioOnPage(audioUrl) {
+// Injected function for STOPPING the dub
+function stopDubbingOnPage() {
   const videoElement = document.querySelector('video');
-  if (!videoElement) {
-    console.error("VaniSetu: Could not find video element.");
-    return;
+  if (videoElement) videoElement.muted = false;
+  
+  const dubbedAudio = document.getElementById('vaniSetuDubbedAudio');
+  if (dubbedAudio) {
+    dubbedAudio.pause();
+    dubbedAudio.src = "";
+    document.body.removeChild(dubbedAudio);
   }
-  videoElement.muted = true;
-  const dubbedAudio = new Audio(audioUrl);
-  dubbedAudio.play();
-  console.log("VaniSetu: Playing dubbed audio.");
+  
+  // Reset state
+  window.vaniSetuPlayerInitialized = false;
+  window.vaniSetuAudioQueue = [];
+  window.vaniSetuIsPlaying = false;
+  console.log("VaniSetu: Dubbing stopped and resources cleaned up.");
 }

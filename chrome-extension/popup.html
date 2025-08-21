@@ -2,13 +2,16 @@
 <html>
 <head>
   <style>
-    body { width: 200px; text-align: center; }
-    button { padding: 10px; font-size: 16px; cursor: pointer; }
+    body { width: 220px; text-align: center; font-family: sans-serif; }
+    button { width: 80%; padding: 10px; font-size: 16px; cursor: pointer; margin-top: 10px; }
+    #status { margin-top: 15px; font-style: italic; }
   </style>
 </head>
 <body>
   <h3>VaniSetu</h3>
-  <button id="dubButton">Test Connection</button>
+  <div id="status">Ready to dub.</div>
+  <button id="startButton">Start Dubbing</button>
+  <button id="stopButton" style="display:none;">Stop Dubbing</button>
   <script src="popup.js"></script>
 </body>
 </html>
