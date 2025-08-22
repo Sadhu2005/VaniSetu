@@ -1,14 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "VaniSetu Dubbing",
-  "version": "0.1",
+  "name": "ANU - Voice Dub AI",
+  "version": "1.0",
   "description": "AI-powered video dubbing.",
   "permissions": [
     "activeTab",
     "scripting",
-    "tabCapture",
-    "offscreen",
-    "storage" 
+    "storage"
   ],
   "host_permissions": [
     "*://*.youtube.com/*"
